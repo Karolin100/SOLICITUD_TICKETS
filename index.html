@@ -3256,6 +3256,13 @@ function openDetailModal(id) {
             </div>
         ` : ""}
 
+        ${(() => {
+            const labels = { accion:"Tipo de Acción", sucursal:"Sucursal", contacto:"Contacto", recibe:"Recibe en sucursal", fechaRecepcion:"Fecha recepción", reporta:"Usuario que reporta", requester:"Solicitado por", modeloActual:"Modelo Actual / Retiro", serialActual:"Serial Actual / Retiro", modeloNuevo:"Modelo del Equipo", serialNuevo:"Serial del Equipo", facturacion:"Tipo de Facturación", tipoMantenimiento:"Mantenimiento", usuariosAfectados:"Usuarios Afectados", escaneo:"Tipo de Escaneo", cantidadUsuarios:"Cantidad de Usuarios", conectividad:"Conectividad", incluyeInstalacion:"Incluye Instalación", departamento:"Departamento", ultimaReparacion:"Última Reparación", notas:"Notas / Observaciones" };
+            const already = new Set(["accion","prioridad","cliente","sucursal","contacto","recibe","fechaRecepcion","reporta","requester","modeloActual","serialActual","modeloNuevo","serialNuevo","facturacion","tipoMantenimiento","usuariosAfectados","escaneo","cantidadUsuarios","conectividad","incluyeInstalacion","departamento","ultimaReparacion","delivery","movedBy","movedAt","completedBy","completedAt","canceledBy","canceledAt","cancelReason","id","tipo","status","createdAt","ticketNumber","evidencias","movementHistory","editHistory","editAccess","assignedCAC","assignedCACAt","edited","editCount","created_by"]);
+            const internal = /^(id|status|createdAt|updatedAt|ticketNumber|evidencias|movementHistory|editHistory|editAccess|assignedCAC|assignedCACAt|movedBy|movedAt|edited|editCount|completedBy|completedAt|canceledBy|canceledAt|cancelReason)$/i;
+            const extras = Object.keys(ticket).filter(k => !already.has(k) && !internal.test(k) && ticket[k] !== null && ticket[k] !== undefined && String(ticket[k]).trim() !== "" && typeof ticket[k] !== "object" && typeof ticket[k] !== "boolean");
+            return extras.length ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">${extras.map(k => detailItem(labels[k] || k.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()), ticket[k])).join("")}</div>` : "";
+        })()}
         <div class="space-y-4">
             ${textDetail("Notas / Observaciones", ticket.notas)}
             ${galeriaHtml}
@@ -3320,39 +3327,21 @@ function revokeLbBlob() {
 async function renderLightbox() {
     const ev = lbList[lbIndex];
     if (!ev) return closeLightbox();
-
     document.getElementById("lb-name").innerText = ev.name || "Evidencia";
     document.getElementById("lb-counter").innerText = `${lbIndex + 1} / ${lbList.length}${lbLabel ? " · " + lbLabel : ""}`;
     const multi = lbList.length > 1;
     document.getElementById("lb-prev").style.display = multi ? "" : "none";
     document.getElementById("lb-next").style.display = multi ? "" : "none";
-
-    const img = document.getElementById("lb-img");
-    const pdfBox = document.getElementById("lb-pdf-box");
-    const frame = document.getElementById("lb-pdf");
-    const mySeq = ++lbSeq;
-    revokeLbBlob();
-
+    const img = document.getElementById("lb-img"), pdfBox = document.getElementById("lb-pdf-box"), frame = document.getElementById("lb-pdf");
+    const mySeq = ++lbSeq; revokeLbBlob();
+    const directUrl = ev.url || ev.webViewLink || '';
     if (isPdfEv(ev)) {
-        img.style.display = "none";
-        img.src = "";
-        pdfBox.classList.remove("hidden");
-        pdfBox.classList.add("flex");
+        img.style.display = "none"; img.src = ""; pdfBox.classList.remove("hidden"); pdfBox.classList.add("flex");
         frame.src = "about:blank";
-        try {
-            const blob = dataUrlToBlob(ev.data, "application/pdf");
-            if (mySeq !== lbSeq) return;
-            lbBlobUrl = URL.createObjectURL(blob);
-            frame.src = lbBlobUrl;
-        } catch (err) {
-            console.error("No se pudo mostrar el PDF:", err);
-        }
+        if (ev.data) { try { const blob = dataUrlToBlob(ev.data, "application/pdf"); if (mySeq !== lbSeq) return; lbBlobUrl = URL.createObjectURL(blob); frame.src = lbBlobUrl; } catch(e) { if (directUrl) frame.src = directUrl; } }
+        else if (directUrl) frame.src = directUrl;
     } else {
-        pdfBox.classList.add("hidden");
-        pdfBox.classList.remove("flex");
-        frame.src = "about:blank";
-        img.style.display = "";
-        img.src = ev.data;
+        pdfBox.classList.add("hidden"); pdfBox.classList.remove("flex"); frame.src = "about:blank"; img.style.display = ""; img.src = ev.data || ev.previewUrl || directUrl;
     }
 }
 
@@ -3374,40 +3363,24 @@ function closeLightbox() {
 }
 
 function openCurrentEvidenceInTab() {
-    const ev = lbList[lbIndex];
-    if (!ev) return;
-    try {
-        const url = URL.createObjectURL(dataUrlToBlob(ev.data, isPdfEv(ev) ? "application/pdf" : null));
-        window.open(url, "_blank");
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (err) {
-        console.error(err);
-        showCustomAlert("No se pudo abrir el archivo.", "Error", "error");
-    }
+    const ev = lbList[lbIndex]; if (!ev) return;
+    const url = ev.url || ev.webViewLink || '';
+    if (!ev.data && url) { window.open(url, "_blank", "noopener"); return; }
+    try { const blobUrl = URL.createObjectURL(dataUrlToBlob(ev.data, isPdfEv(ev) ? "application/pdf" : null)); window.open(blobUrl, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(blobUrl), 60000); }
+    catch (err) { console.error(err); if (url) window.open(url, "_blank", "noopener"); else showCustomAlert("No se pudo abrir el archivo.", "Error", "error"); }
 }
 
 function downloadEvidenceObj(ev, fallbackName) {
-    if (!ev || !ev.data) return;
+    if (!ev) return;
+    if (!ev.data && (ev.url || ev.webViewLink)) { window.open(ev.url || ev.webViewLink, "_blank", "noopener"); return; }
+    if (!ev.data) return;
     try {
-        const pdf = isPdfEv(ev);
-        const blob = dataUrlToBlob(ev.data, pdf ? "application/pdf" : null);
+        const pdf = isPdfEv(ev), blob = dataUrlToBlob(ev.data, pdf ? "application/pdf" : null);
         let name = (ev.name || fallbackName || "evidencia").replace(/[\\\/:*?"<>|]+/g, "_");
         if (pdf && !/\.pdf$/i.test(name)) name = name.replace(/\.[^.]+$/, "") + ".pdf";
         if (!pdf && !/\.[a-z0-9]{2,5}$/i.test(name)) name += ".jpg";
-
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
-    } catch (err) {
-        console.error(err);
-        showCustomAlert("No se pudo descargar el archivo.", "Error", "error");
-    }
+        const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (err) { console.error(err); showCustomAlert("No se pudo descargar el archivo.", "Error", "error"); }
 }
 
 function downloadEvidence(ticketId, index) {
@@ -3458,13 +3431,12 @@ function evThumbHtml(ev, onclick, h) {
     if (isPdfEv(ev)) {
         return `<button type="button" onclick="${onclick}" title="Ver PDF" class="block w-full">
             <div class="${h} w-full rounded-lg mb-1 bg-rose-50 border border-rose-100 flex flex-col items-center justify-center text-rose-600 hover:bg-rose-100 transition">
-                <i class="fa-solid fa-file-pdf text-3xl"></i>
-                <span class="text-[10px] font-bold mt-1">PDF · clic para ver</span>
-            </div>
-        </button>`;
+                <i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[10px] font-bold mt-1">PDF · clic para ver</span>
+            </div></button>`;
     }
+    const src = ev.data || ev.previewUrl || ev.url || '';
     return `<button type="button" onclick="${onclick}" title="Ver imagen" class="block w-full">
-        <img src="${ev.data}" class="${h} w-full object-cover rounded-lg mb-1 hover:opacity-90 transition">
+        <img src="${escapeHtml(src)}" class="${h} w-full object-cover rounded-lg mb-1 hover:opacity-90 transition" onerror="this.style.display='none'">
     </button>`;
 }
 
