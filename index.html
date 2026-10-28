@@ -3296,7 +3296,28 @@ function textDetail(label, valueText) {
             </div>
         </div>`;
 }
-
+    
+/* ---------- Enlaces de Drive para mostrar evidencias ---------- */
+function evFileId(ev) {
+    if (!ev) return "";
+    if (ev.fileId) return ev.fileId;
+    const m = String(ev.url || "").match(/[-\w]{25,}/);
+    return m ? m[0] : "";
+}
+function evImageUrl(ev, size = "w1600") {
+    if (ev.data) return ev.data;
+    const id = evFileId(ev);
+    return id ? `https://drive.google.com/thumbnail?id=${id}&sz=${size}` : (ev.previewUrl || ev.url || "");
+}
+function evPdfPreviewUrl(ev) {
+    const id = evFileId(ev);
+    return id ? `https://drive.google.com/file/d/${id}/preview` : (ev.url || "");
+}
+function evDownloadUrl(ev) {
+    const id = evFileId(ev);
+    return id ? `https://drive.google.com/uc?export=download&id=${id}` : (ev.url || "");
+}
+    
 /* ---------- Visor interno de imágenes ---------- */
 function isLightboxOpen() {
     return !document.getElementById("lightbox-modal").classList.contains("hidden");
@@ -3339,9 +3360,10 @@ async function renderLightbox() {
         img.style.display = "none"; img.src = ""; pdfBox.classList.remove("hidden"); pdfBox.classList.add("flex");
         frame.src = "about:blank";
         if (ev.data) { try { const blob = dataUrlToBlob(ev.data, "application/pdf"); if (mySeq !== lbSeq) return; lbBlobUrl = URL.createObjectURL(blob); frame.src = lbBlobUrl; } catch(e) { if (directUrl) frame.src = directUrl; } }
+        else if (evFileId(ev)) frame.src = evPdfPreviewUrl(ev);
         else if (directUrl) frame.src = directUrl;
     } else {
-        pdfBox.classList.add("hidden"); pdfBox.classList.remove("flex"); frame.src = "about:blank"; img.style.display = ""; img.src = ev.data || ev.previewUrl || directUrl;
+        pdfBox.classList.add("hidden"); pdfBox.classList.remove("flex"); frame.src = "about:blank"; img.style.display = ""; img.src = evImageUrl(ev);
     }
 }
 
@@ -3372,7 +3394,7 @@ function openCurrentEvidenceInTab() {
 
 function downloadEvidenceObj(ev, fallbackName) {
     if (!ev) return;
-    if (!ev.data && (ev.url || ev.webViewLink)) { window.open(ev.url || ev.webViewLink, "_blank", "noopener"); return; }
+    if (!ev.data && (ev.url || ev.webViewLink)) { window.open(evDownloadUrl(ev), "_blank", "noopener"); return; }
     if (!ev.data) return;
     try {
         const pdf = isPdfEv(ev), blob = dataUrlToBlob(ev.data, pdf ? "application/pdf" : null);
@@ -3434,7 +3456,7 @@ function evThumbHtml(ev, onclick, h) {
                 <i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[10px] font-bold mt-1">PDF · clic para ver</span>
             </div></button>`;
     }
-    const src = ev.data || ev.previewUrl || ev.url || '';
+    const src = evImageUrl(ev, "w400");
     return `<button type="button" onclick="${onclick}" title="Ver imagen" class="block w-full">
         <img src="${escapeHtml(src)}" class="${h} w-full object-cover rounded-lg mb-1 hover:opacity-90 transition" onerror="this.style.display='none'">
     </button>`;
